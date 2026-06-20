@@ -1,0 +1,75 @@
+{
+  "remainingOverageTime": "float",
+  "step": "int",
+  "select": {
+    "type": "int",
+    "context": "int",
+    "minCount": "int",
+    "maxCount": "int",
+    "remainDamageCounter": "int",
+    "remainEnergyCost": "int",
+    "option": [
+      "list[2]",
+      {
+        "type": "int"
+      }
+    ],
+    "deck": "NoneType",
+    "contextCard": "NoneType",
+    "effect": "NoneType"
+  },
+  "logs": [
+    "list[0]",
+    "NoneType"
+  ],
+  "current": {
+    "turn": "int",
+    "turnActionCount": "int",
+    "yourIndex": "int",
+    "firstPlayer": "int",
+    "supporterPlayed": "bool",
+    "stadiumPlayed": "bool",
+    "energyAttached": "bool",
+    "retreated": "bool",
+    "result": "int",
+    "stadium": [
+      "list[0]",
+      "NoneType"
+    ],
+    "looking": "NoneType",
+    "players": [
+      "list[2]",
+      {
+        "active": [
+          "list[0]",
+          "..."
+        ],
+        "bench": [
+          "list[0]",
+          "..."
+        ],
+        "benchMax": "int",
+        "deckCount": "int",
+        "discard": [
+          "list[0]",
+          "..."
+        ],
+        "prize": [
+          "list[0]",
+          "..."
+        ],
+        "handCount": "int",
+        "hand": [
+          "list[0]",
+          "..."
+        ],
+        "poisoned": "bool",
+        "burned": "bool",
+        "asleep": "bool",
+        "paralyzed": "bool",
+        "confused": "bool"
+      }
+    ]
+  },
+  "search_begin_input": "str"
+}

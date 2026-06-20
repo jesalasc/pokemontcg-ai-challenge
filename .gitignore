@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Project artifacts
+/artifacts/            # match logs, renders, eval reports (regenerable)
+/checkpoints/          # RL model weights
+/data/cards/           # card database pulled from Kaggle (large)
+/data/samples/         # pulled sample kernels
+/submissions/*.tar.gz  # built submission archives
+*.html                 # rendered battles (keep them out of git)
+
+# Engine binaries downloaded from Kaggle (do not commit; license + size)
+/engine/official/
+
+# Kaggle credentials (never commit)
+kaggle.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

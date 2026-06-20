@@ -1,0 +1,10 @@
+# Layer-3 (RL / self-play) deps. Installed only when we reach training.
+# Kept separate so the submission + baseline stay lightweight.
+-r requirements.txt
+
+# PyTorch (pluggable). On the GPU box, install the CUDA build instead:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.2
+
+tensorboard>=2.15
+tqdm>=4.66

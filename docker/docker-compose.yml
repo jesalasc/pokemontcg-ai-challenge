@@ -1,0 +1,17 @@
+# All services run the Linux x86-64 engine. On Apple Silicon, Docker Desktop
+# emulates amd64 (slower, fine for dev). On a native Linux box it runs at full speed.
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    platform: linux/amd64
+    image: ptcg-dev
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /workspace/src
+    volumes:
+      - ..:/workspace          # live source
+    stdin_open: true
+    tty: true
+    command: /bin/bash
