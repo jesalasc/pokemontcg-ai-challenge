@@ -20,7 +20,13 @@ _REGISTRY: dict[str, str] = {
     "rule_based": "ptcg.agents.rule_based:play",
     "mcts": "ptcg.agents.mcts:play",
     "rl": "ptcg.agents.rl_agent:play",
+    "dragapult": "ptcg.agents.dragapult:play",  # deck-specific (needs cg.api)
+    "az": "ptcg.agents.az_agent:play",          # AlphaZero net-guided (needs cg.api + torch)
 }
+
+# Agents that import the official cg.api -> the engine must be bundled in their
+# submission (build_submission handles this).
+NEEDS_ENGINE = frozenset({"mcts", "dragapult", "az"})
 
 
 def available() -> list[str]:

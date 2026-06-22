@@ -8,12 +8,25 @@ deployable agent on the ladder: **rule-based → MCTS → RL self-play**.
 
 | Layer | Agent | State | Result |
 |---|---|---|---|
-| 1 | `rule_based` | ✅ working | **~87% vs random** (develop-first heuristic) |
-| 2 | `mcts` | 🟡 skeleton | determinized MCTS; falls back to rule_based until the engine search API is wired |
-| 3 | `rl` | 🟡 skeleton | option-scoring net; `distill` runnable, `ppo` skeleton; falls back to rule_based until a checkpoint exists |
+| 3 | `az` | ✅ pipeline working | **AlphaZero-style, deck-conditioned, learned from self-play** (no hand-coded strategy). Net-guided PUCT over the forward model; pipeline verified end-to-end. Train it, then it's our agent. See `docs/TRAINING.md`. |
+| 1 | `dragapult` | ✅ working | deck-specific benchmark (vendored sample) — **93.75% vs random** on the Dragapult deck |
+| 1 | `rule_based` | ✅ working | generic benchmark — 90% on a simple deck, ~25% on Dragapult (kept as a fixed opponent, not extended) |
+| 2 | `mcts` | ✅ working | determinized Monte-Carlo over the forward model (uses the heuristic eval; a benchmark) |
 | 0 | `random` | ✅ working | sparring / sanity baseline |
 
-The engine, harness, agents, tests, and submission packaging all run and pass.
+> **Direction:** strategy is **learned**, not hand-coded. The `az` agent is a single
+> deck-conditioned network trained by population self-play across the deck roster in
+> `decks/`; the rule-based/heuristic agents are kept only as fixed benchmarks. Train
+> with `make az-train` (in the `ptcg-rl` image). Details: `docs/TRAINING.md`.
+
+The engine, harness, agents, tests, card DB, forward model, and submission packaging all run and pass (verified in Docker).
+
+> **Deck note (measured):** the *generic* `rule_based` is deck-agnostic — strong on a
+> simple deck (90%) but weak piloting the complex Dragapult ex evolution deck (25%,
+> long stalled games). Strong play on a real meta deck needs **deck-specific logic**
+> (the `data/samples/` kernels are exactly that, one agent per archetype) and/or
+> search/RL. `deck.csv` is the Dragapult ex meta list; next step is to port the
+> matching sample agent or let MCTS/RL pilot it.
 
 ## ⚠️ Platform: the engine is Linux x86-64 only
 

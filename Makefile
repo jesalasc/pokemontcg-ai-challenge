@@ -3,7 +3,9 @@
 
 IMAGE := ptcg-dev
 PLATFORM := linux/amd64
-RUN := docker run --rm --platform $(PLATFORM) -e PYTHONPATH=/workspace:/workspace/src \
+# data/engine on the path so engine-backed agents (mcts, dragapult) find cg.api.
+RUN := docker run --rm --platform $(PLATFORM) \
+       -e PYTHONPATH=/workspace:/workspace/src:/workspace/data/engine \
        -v "$(CURDIR)":/workspace -w /workspace $(IMAGE)
 # Filter the noisy OpenSpiel banner from engine output.
 QUIET := 2>&1 | grep -viE "open_spiel|INFO:" || true
@@ -11,9 +13,12 @@ QUIET := 2>&1 | grep -viE "open_spiel|INFO:" || true
 A ?= rule_based
 B ?= random
 N ?= 100
+ADECK ?= dragapult-ex
+BDECK ?= dragapult-ex
 
 .PHONY: help build shell test eval baseline-check replay dump-obs \
-        submission distill ppo pull-samples fetch-engine clean
+        submission distill ppo pull-samples fetch-engine cards deck-check deckbuilder probe \
+        az-build az-train az-smoke play bc-pretrain replay-rec replay-view clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -55,6 +60,46 @@ pull-samples: ## kaggle kernels pull the 3 sample notebooks (needs ~/.kaggle/kag
 
 fetch-engine: ## Download official engine + card DB from Kaggle
 	bash tools/fetch_engine.sh
+
+cards: ## Explore the legal card pool (host, no engine): make cards ARGS="--type pokemon --ex"
+	python3 tools/card_explorer.py $(ARGS)
+
+deck-check: ## Validate a deck's legality (host, no engine): make deck-check DECK=deck.csv
+	python3 tools/deck_check.py $(DECK)
+
+deckbuilder: ## Serve the local deck builder at http://localhost:8000 (host, no engine)
+	python3 tools/serve_deckbuilder.py
+
+probe: ## Probe engine rule behavior (coin fairness, end reasons): make probe N=50
+	$(RUN) python tools/probe_rules.py -n $(N) $(QUIET)
+
+# --- AlphaZero training (needs the ptcg-rl image: engine + torch) ---
+RL_RUN := docker run --rm --platform $(PLATFORM) \
+          -e PYTHONPATH=/workspace:/workspace/src:/workspace/data/engine \
+          -v "$(CURDIR)":/workspace -w /workspace ptcg-rl
+
+az-build: ## Build the RL image (engine + CPU torch)
+	docker build --platform $(PLATFORM) -f docker/Dockerfile.rl -t ptcg-rl .
+
+az-train: ## AlphaZero self-play training: make az-train ARGS="--iters 50 --games 16 --sims 64"
+	$(RL_RUN) python training/az_train.py $(ARGS) $(QUIET)
+
+az-smoke: ## Tiny end-to-end pipeline check (stub self-play + train)
+	$(RL_RUN) python training/az_train.py --evaluator stub --iters 1 --games 1 --sims 2 --epochs 1 --out checkpoints/az_smoke.pt $(QUIET)
+
+play: ## Interactive play + demo capture at http://localhost:8000 (you pilot a deck)
+	docker run --rm -it --platform $(PLATFORM) \
+	  -e PYTHONPATH=/workspace:/workspace/src:/workspace/data/engine -p 8000:8000 \
+	  -v "$(CURDIR)":/workspace -w /workspace ptcg-rl python tools/serve_play.py
+
+bc-pretrain: ## BC-pretrain the AZ net from your demos: make bc-pretrain ARGS="--deck crustle"
+	$(RL_RUN) python training/bc_pretrain.py $(ARGS) $(QUIET)
+
+replay-rec: ## Record a readable replay: make replay-rec A=dragapult B=rule_based ADECK=dragapult-dusknoir BDECK=crustle
+	$(RL_RUN) python harness/record_replay.py --a $(A) --b $(B) --a-deck $(ADECK) --b-deck $(BDECK) $(QUIET)
+
+replay-view: ## Watch recorded replays at http://localhost:8001 (host, no engine)
+	python3 tools/serve_replay.py
 
 clean: ## Remove regenerable artifacts
 	rm -rf artifacts/*.py artifacts/replays artifacts/eval __pycache__ .pytest_cache

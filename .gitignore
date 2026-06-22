@@ -15,7 +15,8 @@ venv/
 /data/cards/           # card database pulled from Kaggle (large)
 /data/samples/         # pulled sample kernels
 /submissions/*.tar.gz  # built submission archives
-*.html                 # rendered battles (keep them out of git)
+*.html                 # rendered battles + generated deck builder (regenerable)
+!tools/deckbuilder.template.html   # but keep the source template
 
 # Engine binaries downloaded from Kaggle (do not commit; license + size)
 /engine/official/
@@ -27,3 +28,4 @@ kaggle.json
 .DS_Store
 .idea/
 .vscode/
+*.zip

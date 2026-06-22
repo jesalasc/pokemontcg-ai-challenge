@@ -1,50 +1,130 @@
-"""cabt integer enums — the single place to calibrate engine codes.
+"""cabt integer enums — mirrored verbatim from the official `cg.api` (cg-lib).
 
-Values below are derived empirically from a real game (artifacts/schema/*.json):
-the only HIGH-CONFIDENCE fact is that attack options carry an ``attackId`` (and
-appear as type 13 in the main menu). Zone/type names are best-effort guesses.
+These are the AUTHORITATIVE values (source: data/engine/cg/api.py). We hardcode
+them here so the agent has zero dependency on the (Linux-only) engine at import
+time — the agent runs anywhere, and on the ladder these match `cg.api` exactly.
 
->>> CALIBRATE these against the sample kernel before trusting the named codes:
-    kaggle kernels pull kiyotah/a-sample-rule-based-agent-dragapult-ex-deck
-Fix them here once and every agent benefits.
+Earlier these were guessed from a single game; several were WRONG (notably the
+AreaType mapping). Now calibrated. If the competition appends new enum members,
+update here.
 """
 from __future__ import annotations
 
-
-class Ctx:
-    """select.context — the kind of decision being asked."""
-    MAIN = 0          # main action menu: play / attach / evolve / retreat / attack / end
-    # 1,2,3,4,7,8,22 -> target / card-selection contexts (option.type == 3)
-    ENERGY = 30       # energy attach / distribution (option has count, energyIndex)
-    NUMBER = 38       # choose a number (option has 'number')
-    BINARY = 41       # simple A/B choice (option has only 'type')
-
-    SELECT_CONTEXTS = frozenset({1, 2, 3, 4, 7, 8, 22})
+from enum import IntEnum
 
 
-# option.type inside Ctx.MAIN.
-#   CONFIRMED 13 == attack (matched attackId count exactly).
-#   CONFIRMED 14 == end turn (always present, always the last menu option).
-#   {7,8,9,10,12} == develop actions (play/attach/evolve/retreat/ability) — exact
-#                    names TODO via the sample kernel; treated uniformly for now.
-# Key insight (measured): attacking ENDS the turn, so a good agent does all
-# its develop actions FIRST and attacks LAST. See agents/rule_based.py.
-ATTACK_TYPE = 13
-END_TURN_TYPE = 14
+class AreaType(IntEnum):
+    DECK = 1
+    HAND = 2
+    DISCARD = 3
+    ACTIVE = 4
+    BENCH = 5
+    PRIZE = 6
+    STADIUM = 7
+    ENERGY = 8
+    TOOL = 9
+    PRE_EVOLUTION = 10
+    PLAYER = 11
+    LOOKING = 12
 
 
-class Area:
-    """option.area — board zone. Guessed mapping; CONFIRM via sample kernel."""
-    HAND = 1
-    ACTIVE = 2
-    BENCH = 3
-    DISCARD = 4
-    DECK = 5
-    # 7 also observed (stadium/tool/lost-zone?) — unconfirmed
+class CardType(IntEnum):
+    POKEMON = 0
+    ITEM = 1
+    TOOL = 2
+    SUPPORTER = 3
+    STADIUM = 4
+    BASIC_ENERGY = 5
+    SPECIAL_ENERGY = 6
 
-    ZONE_NAME = {1: "hand", 2: "active", 3: "bench", 4: "discard", 5: "deck"}
+
+class OptionType(IntEnum):
+    NUMBER = 0
+    YES = 1
+    NO = 2
+    CARD = 3
+    TOOL_CARD = 4
+    ENERGY_CARD = 5
+    ENERGY = 6
+    PLAY = 7        # play a card from hand
+    ATTACH = 8      # attach a card (e.g. energy) to a Pokémon
+    EVOLVE = 9
+    ABILITY = 10
+    DISCARD = 11
+    RETREAT = 12
+    ATTACK = 13
+    END = 14        # end turn
+    SKILL = 15
+    SPECIAL_CONDITION = 16
+
+
+class SelectContext(IntEnum):
+    MAIN = 0
+    SETUP_ACTIVE_POKEMON = 1
+    SETUP_BENCH_POKEMON = 2
+    SWITCH = 3
+    TO_ACTIVE = 4
+    TO_BENCH = 5
+    TO_FIELD = 6
+    TO_HAND = 7
+    DISCARD = 8
+    TO_DECK = 9
+    TO_DECK_BOTTOM = 10
+    TO_PRIZE = 11
+    NOT_MOVE = 12
+    DAMAGE_COUNTER = 13
+    DAMAGE_COUNTER_ANY = 14
+    DAMAGE = 15
+    REMOVE_DAMAGE_COUNTER = 16
+    HEAL = 17
+    EVOLVES_FROM = 18
+    EVOLVES_TO = 19
+    DEVOLVE = 20
+    ATTACH_FROM = 21
+    ATTACH_TO = 22
+    DETACH_FROM = 23
+    LOOK = 24
+    EFFECT_TARGET = 25
+    DISCARD_ENERGY_CARD = 26
+    DISCARD_TOOL_CARD = 27
+    SWITCH_ENERGY_CARD = 28
+    DISCARD_CARD_OR_ATTACHED_CARD = 29
+    DISCARD_ENERGY = 30
+    TO_HAND_ENERGY = 31
+    TO_DECK_ENERGY = 32
+    SWITCH_ENERGY = 33
+    SKILL_ORDER = 34
+    ATTACK = 35
+    DISABLE_ATTACK = 36
+    EVOLVE = 37
+    DRAW_COUNT = 38
+    DAMAGE_COUNTER_COUNT = 39
+    REMOVE_DAMAGE_COUNTER_COUNT = 40
+    IS_FIRST = 41
+    MULLIGAN = 42
+    ACTIVATE = 43
+    FIRST_EFFECT = 44
+    MORE_DEVOLVE = 45
+    COIN_HEAD = 46
+    AFFECT_SPECIAL_CONDITION = 47
+    RECOVER_SPECIAL_CONDITION = 48
+
+
+# Contexts where you choose an OPPONENT Pokémon to hurt -> prefer the lowest HP.
+DAMAGE_TARGET_CONTEXTS = frozenset(
+    {SelectContext.DAMAGE, SelectContext.DAMAGE_COUNTER, SelectContext.DAMAGE_COUNTER_ANY}
+)
+
+# Zone name on PlayerState for a given AreaType (for card lookups by option).
+ZONE_NAME = {
+    AreaType.HAND: "hand",
+    AreaType.DISCARD: "discard",
+    AreaType.ACTIVE: "active",
+    AreaType.BENCH: "bench",
+    AreaType.PRIZE: "prize",
+}
 
 
 def is_attack(option: dict) -> bool:
-    """High-confidence: an option is an attack iff it carries an attackId."""
-    return option.get("attackId") is not None
+    """An option is an attack iff it carries an attackId (OptionType.ATTACK)."""
+    return option.get("attackId") is not None or option.get("type") == OptionType.ATTACK

@@ -1,81 +1,90 @@
-"""Layer 1 — rule-based baseline.
+"""Layer 1 — rule-based baseline (card-DB aware).
 
-Philosophy: never crash, always make legal progress, and exploit the one
-high-confidence signal we have (attacks carry ``attackId``) plus board-aware
-targeting. This is intentionally simple and *parameterized* so the domain expert
-can encode real Pokémon knowledge (attack selection, evolution timing, prize
-math) by editing the scoring functions and ``engine_codes.py``.
+Measured principle: attacking ENDS the turn, so develop everything first and
+attack last. Now calibrated against the official enums (engine_codes) and the
+card database (cards), so it:
+  * MAIN: develop -> attack(best/KO) -> end turn
+  * picks the highest-damage / KO'ing attack when several are offered
+  * targets the opponent's lowest-HP, highest-prize (ex/megaEx) Pokémon
+  * never crashes (wrapped by make_safe)
 
-Decision flow, per the verified schema:
-  * context == MAIN   -> prefer attacking when offered, else develop the board
-  * target/selection  -> prefer KOing the opponent's lowest-HP Pokémon
-  * energy attach      -> put energy on the active (our attacker)
-  * everything else    -> first legal option (engine's safe default)
-
-This already beats random because random almost never assembles and uses
-attacks; calibrate the type/area codes from the sample kernel to go further.
+Domain expert: tune via MAIN_TYPE_PRIORITY (sequence develop actions),
+heuristics.py (board value), and engine_codes.py (codes). The sample agents in
+data/samples/ show deck-specific lines worth porting (e.g. Dragapult AttackPlan).
 """
 from __future__ import annotations
 
+from ptcg import cards
 from ptcg import engine_codes as E
 from ptcg import heuristics as H
 from ptcg import protocol as P
 
-# MAIN-menu ordering (measured, not guessed): attacking ENDS the turn, so the
-# winning order is develop-everything -> attack -> end turn. Per-type nudges on
-# top of the "develop" tier let the domain expert sequence develop actions
-# (e.g. attach before evolve) once the codes are named. CALIBRATE via sample.
+# Per-type nudges within the "develop" tier (keyed by OptionType). Raise to
+# sequence develop actions (e.g. attach before evolve); keep RETREAT low.
 MAIN_TYPE_PRIORITY: dict[int, float] = {
-    # e.g. ATTACH_ENERGY: +3, EVOLVE: +2, SUPPORTER: +5, RETREAT: -5
+    E.OptionType.RETREAT: -5.0,   # retreating costs energy — only if useful
 }
 
 DEVELOP_SCORE = 1000.0   # do all setup first
-ATTACK_SCORE = 1.0       # attack only once setup is exhausted (ends the turn)
-END_TURN_SCORE = -1e6    # end the turn only when nothing else is legal
+ATTACK_BASE = 1.0        # attack only after develop (ends the turn); 1..~3 range
+KO_BONUS = 1.0
+END_TURN_SCORE = -1e6    # end turn only when forced
 TARGET_OPP_BASE = 500.0
 
 
-def _card_at(obs: dict, player_index: int, area: int | None, index: int | None) -> dict | None:
-    """Best-effort lookup of a card by (player, area, index) using the guessed
-    zone map. Returns None if the mapping/indices don't resolve."""
+def _players(obs: dict) -> list[dict]:
+    return (obs.get("current") or {}).get("players") or []
+
+
+def _card_at(obs: dict, player_index: int, area, index) -> dict | None:
     if area is None or index is None:
         return None
-    cur = obs.get("current") or {}
-    players = cur.get("players") or []
-    if not (0 <= player_index < len(players)):
+    ps = _players(obs)
+    if not (0 <= player_index < len(ps)):
         return None
-    zone = E.Area.ZONE_NAME.get(area)
-    if zone is None:
-        return None
-    cards = players[player_index].get(zone)
-    if isinstance(cards, list) and 0 <= index < len(cards) and isinstance(cards[index], dict):
-        return cards[index]
+    zone = E.ZONE_NAME.get(area)
+    cards_ = ps[player_index].get(zone) if zone else None
+    if isinstance(cards_, list) and 0 <= index < len(cards_) and isinstance(cards_[index], dict):
+        return cards_[index]
     return None
 
 
-def _score(option: dict, obs: dict, ctx: int | None) -> float:
+def _attack_score(option: dict, obs: dict) -> float:
+    """Order attacks among themselves: more damage, and KO > non-KO."""
     me = P.your_index(obs)
+    dmg = cards.attack_damage(option.get("attackId"))
+    score = ATTACK_BASE + min(0.9, dmg / 1000.0)
+    if me is not None:
+        opp_active = H.active_card(obs, 1 - me)
+        if opp_active and dmg >= int(opp_active.get("hp", 9999)):
+            score += KO_BONUS  # this attack KOs the defender
+    return score
 
-    # 1) Main menu: develop everything first, attack last, end turn only if forced.
-    if ctx == E.Ctx.MAIN:
-        if option.get("type") == E.END_TURN_TYPE:
+
+def _target_score(option: dict, obs: dict) -> float:
+    """Damage targeting: prefer lowest HP, break ties toward ex/megaEx (more prizes)."""
+    me = P.your_index(obs)
+    pidx = option.get("playerIndex")
+    card = _card_at(obs, pidx, option.get("area"), option.get("index"))
+    hp = int(card.get("hp", 9999)) if card else 9999
+    prize = cards.prize_value(card.get("id")) if card else 1
+    base = TARGET_OPP_BASE if (pidx is not None and me is not None and pidx != me) else 0.0
+    return base - hp + 0.5 * prize
+
+
+def _score(option: dict, obs: dict, ctx) -> float:
+    if ctx == E.SelectContext.MAIN:
+        t = option.get("type")
+        if t == E.OptionType.END:
             return END_TURN_SCORE
         if E.is_attack(option):
-            return ATTACK_SCORE
-        return DEVELOP_SCORE + MAIN_TYPE_PRIORITY.get(option.get("type"), 0.0)
+            return _attack_score(option, obs)
+        return DEVELOP_SCORE + MAIN_TYPE_PRIORITY.get(t, 0.0)
 
-    # 2) Targeting an opponent's Pokémon: prefer the lowest-HP (closest to KO).
-    pidx = option.get("playerIndex")
-    if pidx is not None and me is not None and pidx != me:
-        card = _card_at(obs, pidx, option.get("area"), option.get("index"))
-        hp = int(card.get("hp", 9999)) if card else 9999
-        return TARGET_OPP_BASE - hp  # lower HP -> higher score
+    if ctx in E.DAMAGE_TARGET_CONTEXTS:
+        return _target_score(option, obs)
 
-    # 3) Energy distribution: attach to our active attacker.
-    if ctx == E.Ctx.ENERGY and option.get("area") == E.Area.ACTIVE:
-        return 50.0
-
-    # 4) Default: neutral — engine tends to list useful options first.
+    # Other selection contexts: neutral (engine lists sensible options first).
     return 0.0
 
 
@@ -90,5 +99,5 @@ def play(obs: dict) -> list[int]:
     return ranked[:k]
 
 
-# Expose the position evaluation so MCTS / RL can reuse the same value sense.
+# Position evaluation reused by MCTS / RL.
 evaluate = H.my_value_minus_opp

@@ -1,0 +1,371 @@
+<style>
+  :root{
+    --ground:#14171F;        /* near-black blue-slate play-mat */
+    --panel:#1B1F2A;
+    --panel-2:#222736;
+    --line:#2E3445;
+    --text:#EAEDF2;
+    --muted:#8B93A7;
+    --accent:#F6C945;        /* electric gold — chrome + deck-ready */
+    --accent-2:#2DD4BF;      /* teal — interactive */
+    --bad:#E8503A;
+    /* energy-type encoding (PTCG) */
+    --G:#5FB85B; --R:#E8503A; --W:#3DA1E0; --L:#F6C945; --P:#B056C9;
+    --F:#C77B3B; --D:#566; --M:#8A98A6; --N:#C9A227; --C:#AEB6C4; --TR:#8A4FB0;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--text);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;line-height:1.4}
+  .wrap{max-width:1280px;margin:0 auto;padding:20px clamp(12px,3vw,28px) 64px}
+
+  /* header */
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+    flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:14px;margin-bottom:18px}
+  .brand h1{font-size:clamp(26px,4.5vw,42px);margin:0;letter-spacing:-.03em;font-weight:800;line-height:1}
+  .brand h1 .spark{color:var(--accent)}
+  .brand p{margin:6px 0 0;color:var(--muted);font-size:13px;letter-spacing:.02em}
+  .pool-stat{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+  .pool-stat b{color:var(--text)}
+
+  /* layout */
+  .grid{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}
+  @media(max-width:880px){.grid{grid-template-columns:1fr}}
+
+  /* filters */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .search{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);
+    color:var(--text);border-radius:10px;padding:10px 12px;font-size:14px;font-family:var(--sans)}
+  .search:focus{outline:2px solid var(--accent-2);outline-offset:1px}
+  .chip{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    padding:7px 11px;border-radius:999px;font-size:12.5px;cursor:pointer;font-family:var(--sans);
+    transition:background .12s,color .12s,border-color .12s}
+  .chip:hover{color:var(--text)}
+  .chip[aria-pressed="true"]{background:var(--accent);color:#1a1300;border-color:var(--accent);font-weight:600}
+  select.sort{background:var(--panel);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:8px;font-size:12.5px;font-family:var(--sans)}
+
+  /* card list */
+  .count-line{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 2px 8px}
+  .list{display:flex;flex-direction:column;gap:5px;max-height:72vh;overflow:auto;padding-right:6px}
+  .row{display:grid;grid-template-columns:46px 1fr auto;gap:10px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--rc,var(--C));
+    border-radius:9px;padding:8px 12px}
+  .row .id{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .row .name{font-weight:600;font-size:14px}
+  .row .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px}
+  .tag{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em;
+    color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .tag.ex{color:#1a1300;background:var(--accent);border-color:var(--accent);font-weight:700}
+  .tag.mega{color:#fff;background:var(--P);border-color:var(--P);font-weight:700}
+  .energy{width:17px;height:17px;border-radius:50%;display:inline-grid;place-items:center;
+    font-family:var(--mono);font-size:10px;font-weight:700;color:#11141c}
+  .atk{font-size:11.5px;color:var(--muted)}
+  .atk b{color:var(--text);font-family:var(--mono)}
+  .stepper{display:flex;align-items:center;gap:6px}
+  .stepper button{width:28px;height:28px;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--text);font-size:16px;cursor:pointer;line-height:1}
+  .stepper button:hover{border-color:var(--accent-2);color:var(--accent-2)}
+  .stepper .n{font-family:var(--mono);min-width:16px;text-align:center;font-size:13px}
+  .stepper .n.has{color:var(--accent)}
+
+  /* deck panel */
+  .deck{position:sticky;top:16px;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:14px}
+  .gauge{display:flex;align-items:center;gap:14px}
+  .ring{--p:0;width:74px;height:74px;border-radius:50%;flex:none;
+    background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--line) 0);
+    display:grid;place-items:center;transition:--p .35s ease}
+  @property --p{syntax:'<number>';inherits:false;initial-value:0}
+  .ring span{width:58px;height:58px;border-radius:50%;background:var(--panel);
+    display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:15px}
+  .ring.full span{color:var(--accent)}
+  .gauge .lab{font-size:13px;color:var(--muted)}
+  .stamp{font-family:var(--mono);font-weight:800;letter-spacing:.08em;font-size:13px;
+    padding:3px 9px;border-radius:6px;display:inline-block;margin-top:6px}
+  .stamp.ok{background:var(--accent);color:#1a1300}
+  .stamp.no{background:transparent;color:var(--bad);border:1px dashed var(--bad)}
+
+  .checks{display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+  .check{display:flex;gap:8px;align-items:center;color:var(--muted)}
+  .check::before{content:"○";color:var(--muted);font-family:var(--mono)}
+  .check.ok{color:var(--text)}
+  .check.ok::before{content:"●";color:var(--accent-2)}
+  .check.fail::before{content:"✕";color:var(--bad)}
+  .check.fail{color:var(--bad)}
+
+  .group h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    margin:10px 0 5px;font-family:var(--mono)}
+  .dline{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:2px 0;cursor:pointer}
+  .dline:hover{color:var(--bad)}
+  .dline .c{font-family:var(--mono);color:var(--muted)}
+  .empty{color:var(--muted);font-size:12.5px;font-style:italic}
+
+  .export textarea{width:100%;height:74px;background:var(--ground);border:1px solid var(--line);
+    color:var(--muted);border-radius:8px;font-family:var(--mono);font-size:11px;padding:8px;resize:vertical}
+  .btn{width:100%;padding:10px;border-radius:9px;border:none;background:var(--accent);
+    color:#1a1300;font-weight:700;font-size:13.5px;cursor:pointer;font-family:var(--sans);margin-top:8px}
+  .btn:disabled{background:var(--line);color:var(--muted);cursor:not-allowed}
+  .btn.copied{background:var(--accent-2)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .btn.ghost:hover:not(:disabled){border-color:var(--accent-2);color:var(--accent-2)}
+  .status{font-family:var(--mono);font-size:11.5px;margin:8px 0 0;min-height:14px}
+  .status.good{color:var(--accent-2)} .status.bad{color:var(--bad)}
+  .saved{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+  .saved h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    margin:0 0 6px;font-family:var(--mono)}
+  .savedItem{display:flex;align-items:center;gap:8px;justify-content:space-between;
+    padding:4px 0;font-size:12.5px}
+  .savedItem .meta{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .savedItem .nm{font-weight:600}
+  .savedItem .dot{color:var(--accent-2)} .savedItem .dot.no{color:var(--bad)}
+  .loadBtn{background:transparent;border:1px solid var(--line);color:var(--accent-2);
+    border-radius:6px;padding:3px 9px;font-size:11.5px;cursor:pointer;font-family:var(--sans)}
+  .loadBtn:hover{border-color:var(--accent-2)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+  @media(prefers-reduced-motion:reduce){.ring{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Deck<span class="spark">·</span>Forge</h1>
+      <p>Build a legal 60-card deck from the PTCG AI Battle legal pool — then export it for the agent.</p>
+    </div>
+    <div class="pool-stat" id="poolStat"></div>
+  </header>
+
+  <div class="grid">
+    <main>
+      <div class="filters">
+        <input class="search" id="search" placeholder="Search by name…" autocomplete="off">
+        <select class="sort" id="sort" aria-label="Sort">
+          <option value="hp">Sort: HP ↓</option>
+          <option value="name">Sort: Name</option>
+          <option value="id">Sort: ID</option>
+        </select>
+      </div>
+      <div class="filters" id="typeChips"></div>
+      <p class="count-line" id="countLine"></p>
+      <div class="list" id="list"></div>
+    </main>
+
+    <aside class="deck">
+      <div class="gauge">
+        <div class="ring" id="ring"><span id="ringN">0</span></div>
+        <div>
+          <div class="lab">cards in deck</div>
+          <div id="stamp" class="stamp no">INCOMPLETE</div>
+        </div>
+      </div>
+      <div class="checks" id="checks"></div>
+      <div id="deckList"></div>
+      <div class="export">
+        <input class="search" id="deckName" placeholder="Deck name (e.g. my-dragapult)" autocomplete="off">
+        <button class="btn" id="saveBtn" disabled>Save deck</button>
+        <button class="btn ghost" id="copyBtn" disabled>Copy list</button>
+        <p class="status" id="saveStatus"></p>
+        <textarea id="exportBox" readonly placeholder="Your card IDs appear here…"></textarea>
+        <div class="saved">
+          <h3>Saved decks</h3>
+          <div id="savedList"></div>
+        </div>
+        <p class="hint">Saving writes <b>decks/&lt;name&gt;.csv</b> and makes it the <b>active</b> deck the agent plays. Nothing is overwritten unless you reuse a name. Then tell me in chat and I'll eval it.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const CARDS = __CARDS_JSON__;
+const TYPE = {0:"Pokemon",1:"Item",2:"Tool",3:"Supporter",4:"Stadium",5:"Basic Energy",6:"Special Energy"};
+const ENERGY_FULL = {G:"Grass",R:"Fire",W:"Water",L:"Lightning",P:"Psychic",F:"Fighting",D:"Darkness",M:"Metal",N:"Dragon",C:"Colorless",TR:"Team Rocket","*":"Rainbow"};
+const byId = new Map(CARDS.map(c=>[c.id,c]));
+const deck = new Map();              // id -> count
+let filterType = "all", q = "", sortBy = "hp";
+
+const $ = s=>document.querySelector(s);
+function energyColor(e){return getComputedStyle(document.documentElement).getPropertyValue('--'+(e==='*'?'N':e))||'var(--C)';}
+
+/* ---- filters ---- */
+const TYPES = [["all","All"],["pokemon","Pokémon"],["1","Item"],["3","Supporter"],["4","Stadium"],["2","Tool"],["energy","Energy"],["ex","ex / Mega"]];
+const chipBox = $("#typeChips");
+TYPES.forEach(([v,label])=>{
+  const b=document.createElement("button");
+  b.className="chip";b.textContent=label;b.setAttribute("aria-pressed",v==="all");
+  b.onclick=()=>{filterType=v;[...chipBox.children].forEach(c=>c.setAttribute("aria-pressed","false"));
+    b.setAttribute("aria-pressed","true");render();};
+  chipBox.appendChild(b);
+});
+$("#search").oninput=e=>{q=e.target.value.toLowerCase().trim();render();};
+$("#sort").onchange=e=>{sortBy=e.target.value;render();};
+
+function matches(c){
+  if(q && !c.n.toLowerCase().includes(q)) return false;
+  if(filterType==="all") return true;
+  if(filterType==="pokemon") return c.t===0;
+  if(filterType==="energy") return c.t===5||c.t===6;
+  if(filterType==="ex") return c.x||c.m;
+  return c.t===Number(filterType);
+}
+function sortCards(a,b){
+  if(sortBy==="name") return a.n.localeCompare(b.n);
+  if(sortBy==="id") return a.id-b.id;
+  return (b.hp||0)-(a.hp||0) || a.n.localeCompare(b.n);
+}
+
+/* ---- deck rules ---- */
+function total(){let s=0;for(const n of deck.values())s+=n;return s;}
+function nameCount(name){let s=0;for(const [id,n] of deck){if(byId.get(id).n===name)s+=n;}return s;}
+function canAdd(c){
+  if(total()>=60) return false;
+  if(c.t===5) return true;                          // basic energy: unlimited
+  return nameCount(c.n) < 4;                          // 4-per-name limit
+}
+function add(c){if(canAdd(c)){deck.set(c.id,(deck.get(c.id)||0)+1);update();}}
+function remove(id){const n=deck.get(id);if(n>1)deck.set(id,n-1);else deck.delete(id);update();}
+
+/* ---- render card list ---- */
+function render(){
+  const rows = CARDS.filter(matches).sort(sortCards);
+  $("#countLine").textContent = `${rows.length} cards match`;
+  const list = $("#list"); list.innerHTML="";
+  const frag=document.createDocumentFragment();
+  for(const c of rows.slice(0,400)){
+    const have = deck.get(c.id)||0;
+    const row=document.createElement("div");row.className="row";
+    const ec = c.et || "C";
+    row.style.setProperty("--rc", c.t===0||c.t>=5 ? `var(--${ec==='*'?'N':ec})` : "var(--C)");
+    const stage = c.s==="B"?"Basic":c.s==="1"?"Stage 1":c.s==="2"?"Stage 2":"";
+    const atk = (c.a&&c.a.length)?`<span class="atk"><b>${c.a[0][1]}</b> ${esc(c.a[0][0])}</span>`:"";
+    const badge = c.x?`<span class="tag ex">ex</span>`:c.m?`<span class="tag mega">mega</span>`:"";
+    const energy = (c.t===0||c.t>=5)?`<span class="energy" style="background:var(--${ec==='*'?'N':ec})" title="${ENERGY_FULL[ec]||ec}">${ec}</span>`:"";
+    const hp = c.t===0?`<span class="tag">HP ${c.hp}</span>`:"";
+    row.innerHTML=`
+      <div><div class="id">#${c.id}</div></div>
+      <div>
+        <div class="name">${energy} ${esc(c.n)} ${badge}</div>
+        <div class="meta"><span class="tag">${TYPE[c.t]}</span>${stage?`<span class="tag">${stage}</span>`:""}${hp}${atk}</div>
+      </div>
+      <div class="stepper">
+        <button aria-label="remove" data-rm="${c.id}" ${have?"":"disabled"}>−</button>
+        <span class="n ${have?"has":""}">${have}</span>
+        <button aria-label="add" data-add="${c.id}">+</button>
+      </div>`;
+    frag.appendChild(row);
+  }
+  list.appendChild(frag);
+  list.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>add(byId.get(+b.dataset.add)));
+  list.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>remove(+b.dataset.rm));
+}
+function esc(s){return s.replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));}
+
+/* ---- render deck panel ---- */
+function update(){
+  const t=total();
+  $("#ringN").textContent=t;
+  const ring=$("#ring");ring.style.setProperty("--p",Math.min(100,t/60*100));
+  // legality
+  const overName=[...new Set([...deck.keys()].map(id=>byId.get(id).n))]
+      .filter(nm=>byId.get([...deck.keys()].find(id=>byId.get(id).n===nm)).t!==5 && nameCount(nm)>4);
+  const aces=[...deck].reduce((s,[id,n])=>s+(byId.get(id).ace?n:0),0);
+  const basics=[...deck].some(([id])=>{const c=byId.get(id);return c.t===0&&c.s==="B";});
+  const checks=[
+    [t===60,`Exactly 60 cards (${t})`],
+    [overName.length===0,overName.length?`Over 4 copies: ${overName.join(", ")}`:"≤ 4 copies per name"],
+    [aces<=1,`≤ 1 ACE SPEC (${aces})`],
+    [basics,"Has a Basic Pokémon"],
+  ];
+  const legal=checks.every(c=>c[0]);
+  ring.classList.toggle("full",t===60&&legal);
+  const stamp=$("#stamp");
+  stamp.textContent=legal?"TOURNAMENT LEGAL":(t===60?"ILLEGAL":"INCOMPLETE");
+  stamp.className="stamp "+(legal?"ok":"no");
+  $("#checks").innerHTML=checks.map(([ok,txt])=>
+    `<div class="check ${ok?"ok":(txt.startsWith("Over")||txt.startsWith("≤ 1")&&!ok?"fail":"fail")}">${txt}</div>`).join("");
+
+  // grouped deck list
+  const groups={Pokémon:[],Trainers:[],Energy:[]};
+  for(const [id,n] of deck){const c=byId.get(id);
+    (c.t===0?groups.Pokémon:c.t>=5?groups.Energy:groups.Trainers).push([c,n]);}
+  const dl=$("#deckList");dl.innerHTML="";
+  if(t===0){dl.innerHTML='<p class="empty">Click + to add cards. Aim for ~14–20 Pokémon, ~30+ Trainers, ~6–12 Energy.</p>';}
+  for(const g of ["Pokémon","Trainers","Energy"]){
+    if(!groups[g].length)continue;
+    const sub=groups[g].reduce((s,[,n])=>s+n,0);
+    const sec=document.createElement("div");sec.className="group";
+    sec.innerHTML=`<h3>${g} · ${sub}</h3>`;
+    groups[g].sort((a,b)=>a[0].n.localeCompare(b[0].n)).forEach(([c,n])=>{
+      const d=document.createElement("div");d.className="dline";d.title="click to remove one";
+      d.innerHTML=`<span>${esc(c.n)}</span><span class="c">×${n}</span>`;
+      d.onclick=()=>remove(c.id);sec.appendChild(d);
+    });
+    dl.appendChild(sec);
+  }
+  // export
+  const ids=[];for(const [id,n] of deck)for(let i=0;i<n;i++)ids.push(id);
+  $("#exportBox").value=ids.join("\n");
+  $("#copyBtn").disabled=t===0;$("#copyBtn").classList.remove("copied");$("#copyBtn").textContent="Copy list";
+  $("#saveBtn").disabled=t===0;
+  render(); // refresh counts/disabled states in list
+}
+$("#copyBtn").onclick=()=>{
+  const txt=$("#exportBox").value;
+  navigator.clipboard?.writeText(txt).then(()=>flash()).catch(()=>{ $("#exportBox").select();document.execCommand("copy");flash();});
+};
+function flash(){const b=$("#copyBtn");b.classList.add("copied");b.textContent="Copied ✓";setTimeout(()=>{b.classList.remove("copied");b.textContent="Copy list";},1800);}
+
+let pendingOverwrite=null;   // deck name awaiting an overwrite confirm
+$("#deckName").oninput=()=>{ if(pendingOverwrite){pendingOverwrite=null;$("#saveBtn").textContent="Save deck";} };
+$("#saveBtn").onclick=async()=>{
+  const ids=$("#exportBox").value.split("\n").filter(Boolean).map(Number);
+  const name=$("#deckName").value.trim();
+  const st=$("#saveStatus");
+  if(!name){st.textContent="Name your deck first.";st.className="status bad";$("#deckName").focus();return;}
+  const overwrite=(pendingOverwrite===name);
+  st.textContent="Saving…";st.className="status";
+  try{
+    const r=await fetch("/save",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name,ids,overwrite})});
+    const d=await r.json();
+    if(d.exists){pendingOverwrite=name;$("#saveBtn").textContent="Overwrite “"+name+"”?";
+      st.textContent=d.message;st.className="status bad";return;}
+    pendingOverwrite=null;$("#saveBtn").textContent="Save deck";
+    st.textContent=d.message;st.className="status "+(d.ok?"good":"bad");
+    loadDecks();
+  }catch(e){st.textContent="Save failed — is the local server running? (make deckbuilder)";st.className="status bad";}
+};
+
+async function loadDecks(){
+  try{
+    const d=await (await fetch("/decks")).json();
+    const box=$("#savedList");
+    if(!d.decks.length){box.innerHTML='<p class="empty">No saved decks yet.</p>';return;}
+    box.innerHTML="";
+    d.decks.forEach(dk=>{
+      const row=document.createElement("div");row.className="savedItem";
+      row.innerHTML=`<span class="nm"><span class="dot ${dk.legal?'':'no'}">●</span> ${esc(dk.name)}</span>`+
+        `<span class="meta">${dk.count}/60</span>`;
+      const b=document.createElement("button");b.className="loadBtn";b.textContent="Load";
+      b.onclick=()=>loadDeck(dk.name);row.appendChild(b);box.appendChild(row);
+    });
+  }catch(e){$("#savedList").innerHTML='<p class="empty">server offline</p>';}
+}
+async function loadDeck(name){
+  const d=await (await fetch("/deck?name="+encodeURIComponent(name))).json();
+  if(!d.ok)return;
+  deck.clear();d.ids.forEach(id=>{if(byId.has(id))deck.set(id,(deck.get(id)||0)+1);});
+  $("#deckName").value=name;pendingOverwrite=null;$("#saveBtn").textContent="Save deck";
+  $("#saveStatus").textContent="Loaded “"+name+"”";$("#saveStatus").className="status good";
+  update();
+}
+
+/* ---- init ---- */
+(function(){
+  const pk=CARDS.filter(c=>c.t===0).length, tr=CARDS.filter(c=>c.t>=1&&c.t<=4).length, en=CARDS.filter(c=>c.t>=5).length;
+  $("#poolStat").innerHTML=`<b>${CARDS.length}</b> legal cards &nbsp;·&nbsp; <b>${pk}</b> Pokémon &nbsp;·&nbsp; <b>${tr}</b> Trainers &nbsp;·&nbsp; <b>${en}</b> Energy`;
+  update();
+  loadDecks();
+})();
+</script>

@@ -20,11 +20,13 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 
 
-def _add_package(tar: tarfile.TarFile, pkg_dir: Path, arcprefix: str) -> None:
-    for p in sorted(pkg_dir.rglob("*.py")):
-        if "__pycache__" in p.parts:
+def _add_tree(tar: tarfile.TarFile, root: Path, arcprefix: str, suffixes=(".py", ".json")) -> None:
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or "__pycache__" in p.parts:
             continue
-        tar.add(p, arcname=f"{arcprefix}/{p.relative_to(pkg_dir.parent)}")
+        if suffixes and p.suffix not in suffixes:
+            continue
+        tar.add(p, arcname=f"{arcprefix}/{p.relative_to(root)}")
 
 
 def build(agent: str, checkpoint: str | None, out_dir: str) -> Path:
@@ -43,17 +45,33 @@ def build(agent: str, checkpoint: str | None, out_dir: str) -> Path:
             agent_txt = f.name
         tar.add(agent_txt, arcname="agent.txt")
 
-        # the package
-        _add_package(tar, _ROOT / "src" / "ptcg", "src/ptcg")
+        # the package (.py + bundled card-DB JSON under _data/)
+        _add_tree(tar, _ROOT / "src" / "ptcg", "src/ptcg")
+
+        if agent in ("mcts", "dragapult", "az"):
+            # these import cg.api -> bundle the official engine (incl. libcg.so)
+            cg_dir = _ROOT / "data" / "engine" / "cg"
+            if not cg_dir.is_dir():
+                raise FileNotFoundError("data/engine/cg missing — run `make fetch-engine`")
+            _add_tree(tar, cg_dir, "cg", suffixes=None)
 
         if agent == "rl":
-            # bundle the network module + checkpoint so rl_agent can load it
             tar.add(_ROOT / "training" / "__init__.py", arcname="training/__init__.py")
             tar.add(_ROOT / "training" / "networks.py", arcname="training/networks.py")
             ckpt = Path(checkpoint or "checkpoints/policy.pt")
             if not ckpt.is_file():
                 raise FileNotFoundError(f"checkpoint not found: {ckpt}")
             tar.add(ckpt, arcname="checkpoints/policy.pt")
+
+        if agent == "az":
+            # NOTE: the AZ agent also needs torch at run time — confirm the ladder
+            # runtime provides torch before relying on this submission.
+            for m in ("__init__.py", "networks.py", "az_mcts.py"):
+                tar.add(_ROOT / "training" / m, arcname=f"training/{m}")
+            ckpt = Path(checkpoint or "checkpoints/az.pt")
+            if not ckpt.is_file():
+                raise FileNotFoundError(f"checkpoint not found: {ckpt}")
+            tar.add(ckpt, arcname="checkpoints/az.pt")
 
     size_mb = archive.stat().st_size / 1e6
     print(f"built {archive}  ({size_mb:.2f} MB, agent={agent})")

@@ -1,0 +1,17 @@
+{
+  "agent_a": "dragapult",
+  "agent_b": "random",
+  "games": 16,
+  "wins": 15,
+  "draws": 0,
+  "losses": 1,
+  "errors": 0,
+  "score": 0.9375,
+  "winrate_ci95": [
+    0.7167,
+    0.9889
+  ],
+  "elo_gap_est": 470.4,
+  "avg_steps": 97.6,
+  "timestamp": "2026-06-20T21:42:10"
+}

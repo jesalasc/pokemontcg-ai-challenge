@@ -1,120 +1,96 @@
-"""Layer 2 — determinized MCTS over the engine forward model.
+"""Layer 2 — determinized Monte-Carlo search.
 
-cabt is imperfect-information (hidden hands/decks) + stochastic. The standard
-treatment, and what the brief prescribes, is **determinized MCTS**: each
-iteration, ask the engine to sample a concrete world consistent with public
-info (``forward_model.sample_determinization``), then run perfect-info MCTS on
-that sample; average over many determinizations. The rule_based agent serves as
-the rollout (playout) policy.
+For the current decision, we evaluate each legal option by: sample several
+determinizations of the hidden state, play the option in each, roll out to the
+end with the rule_based policy, and average the outcome. Pick the best-scoring
+option. This is "flat Monte-Carlo with determinization" — the honest first step
+toward full UCT, and it directly handles imperfect information by averaging over
+sampled worlds.
 
-This module implements the full search loop against the ForwardModel interface.
-Until the engine's search API is wired (see forward_model.py / fetch_engine.sh),
-``get_forward_model()`` returns None and we transparently fall back to the
-rule_based action — so "mcts" is always runnable, just not yet searching.
+It's strictly fallback-safe: if the engine search API isn't available, the move
+is multi-select, or anything errors, it returns the rule_based action. Budgeted
+by wall-clock (the ladder gives ~600s/game).
+
+Upgrade path: replace flat-MC with UCT over the forward model (selection/
+expansion via search_step children), and replace the placeholder opponent belief
+in forward_model.py with one inferred from the public logs.
 """
 from __future__ import annotations
 
-import math
 import time
-from dataclasses import dataclass, field
-from typing import Any
 
+from ptcg import heuristics as H
 from ptcg import protocol as P
 from ptcg.agents import rule_based
+from ptcg.deck import load_deck
 from ptcg.forward_model import get_forward_model
 
-# Search budget. The ladder gives ~600s overage per game, so keep per-move cost
-# modest and rely on iterative deepening by wall-clock.
-TIME_BUDGET_S = 1.0
-MAX_ITERS = 400
-N_DETERMINIZATIONS = 16
-UCT_C = 1.4
+TIME_BUDGET_S = 2.0
+N_DETERMINIZATIONS = 8
+MAX_ROLLOUT_DEPTH = 80
+# Non-terminal rollout cutoffs fall back to a scaled board-value estimate.
+VALUE_SCALE = 600.0
 
 
-@dataclass
-class Node:
-    to_play: int
-    parent: "Node | None" = None
-    children: dict[int, "Node"] = field(default_factory=dict)
-    untried: list[int] = field(default_factory=list)
-    visits: int = 0
-    value: float = 0.0  # summed reward from the perspective of `to_play`
-
-    def uct_child(self, c: float) -> "Node":
-        log_n = math.log(self.visits + 1)
-        return max(
-            self.children.values(),
-            key=lambda ch: (ch.value / ch.visits if ch.visits else 0.0)
-            + c * math.sqrt(log_n / (ch.visits + 1e-9)),
-        )
+def _leaf_value(fm, state, me: int) -> float:
+    if fm.is_terminal(state):
+        return fm.reward(state, me)
+    od = fm.obs_dict(state)
+    v = H.board_value(od, me) - H.board_value(od, 1 - me)
+    return max(-0.99, min(0.99, v / VALUE_SCALE))
 
 
-def _rollout(fm: Any, state: Any, max_depth: int = 60) -> float:
-    """Play to the end with the rule_based policy; return reward for player 0."""
+def _rollout(fm, state, me: int, deadline: float) -> float:
     depth = 0
-    while not fm.is_terminal(state) and depth < max_depth:
-        obs = fm.observation(state)  # forward model exposes obs for the policy
-        action = rule_based.play(obs)
-        state = fm.step(state, action)
+    while not fm.is_terminal(state) and depth < MAX_ROLLOUT_DEPTH and time.time() < deadline:
+        od = fm.obs_dict(state)
+        sel = od.get("select")
+        if not sel or not sel.get("option"):
+            break
+        state = fm.step(state, rule_based.play(od))
         depth += 1
-    return fm.reward(state, player=0)
+    return _leaf_value(fm, state, me)
 
 
-def _search(fm: Any, obs: dict) -> int:
-    """Run determinized MCTS and return the best option index."""
-    root_player = P.your_index(obs) or 0
-    stats: dict[int, list[float]] = {}  # option index -> [visits, value]
-
+def _flat_mc(fm, obs: dict, n_opts: int) -> list[float]:
+    me = P.your_index(obs) or 0
+    total = [0.0] * n_opts
+    count = [0] * n_opts
     deadline = time.time() + TIME_BUDGET_S
-    iters = 0
-    while iters < MAX_ITERS and time.time() < deadline:
-        # Sample a concrete world consistent with what we can see.
-        state = fm.sample_determinization(fm.root(obs))
-        root = Node(to_play=root_player, untried=list(range(len(P.options(obs)))))
-
-        # --- one perfect-info MCTS iteration on this determinization ---
-        node, path = root, [root]
-        while not node.untried and node.children:
-            node = node.uct_child(UCT_C)
-            path.append(node)
-        if node.untried:
-            a = node.untried.pop()
-            child_state = fm.step(state, [a])
-            child = Node(to_play=fm.to_play(child_state), parent=node)
-            node.children[a] = child
-            path.append(child)
-            state = child_state
-        reward0 = _rollout(fm, state)
-        for nd in path:
-            nd.visits += 1
-            nd.value += reward0 if nd.to_play == 0 else -reward0
-
-        for a, ch in root.children.items():
-            s = stats.setdefault(a, [0.0, 0.0])
-            s[0] += ch.visits
-            s[1] += ch.value
-        iters += 1
-
-    if not stats:
-        raise RuntimeError("MCTS produced no statistics")
-    # Robust child: most-visited option index.
-    return max(stats, key=lambda a: stats[a][0])
+    d = 0
+    while d < N_DETERMINIZATIONS and time.time() < deadline:
+        root = fm.root(obs)              # one sampled world
+        for a in range(n_opts):
+            if time.time() >= deadline:
+                break
+            try:
+                child = fm.step(root, [a])
+                total[a] += _rollout(fm, child, me, deadline)
+                count[a] += 1
+            except Exception:
+                continue
+        d += 1
+    return [total[i] / count[i] if count[i] else float("-inf") for i in range(n_opts)]
 
 
 def play(obs: dict) -> list[int]:
     sel = obs.get("select") or {}
-    k = min(int(sel.get("maxCount", 1)), len(sel.get("option", [])))
-    fm = get_forward_model()
-    if fm is None:
-        # Engine search API not available -> use the strong baseline.
+    opts = sel.get("option", [])
+    k = min(int(sel.get("maxCount", 1)), len(opts))
+    if k <= 0:
+        return []
+
+    # Search only single-select decisions with a usable forward model.
+    if k != 1 or obs.get("search_begin_input") is None:
         return rule_based.play(obs)
+    fm = get_forward_model(load_deck())
+    if fm is None:
+        return rule_based.play(obs)
+
     try:
-        best = _search(fm, obs)
-        # For multi-select, fill remaining picks with the baseline ranking.
-        if k <= 1:
-            return [best]
-        rest = [i for i in rule_based.play({**obs, "select": {**sel, "maxCount": k}})
-                if i != best]
-        return [best, *rest][:k]
+        scores = _flat_mc(fm, obs, len(opts))
+        if all(s == float("-inf") for s in scores):
+            return rule_based.play(obs)
+        return [max(range(len(opts)), key=lambda i: scores[i])]
     except Exception:
         return rule_based.play(obs)

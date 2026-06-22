@@ -1,0 +1,17 @@
+{
+  "agent_a": "rule_based",
+  "agent_b": "random",
+  "games": 20,
+  "wins": 18,
+  "draws": 0,
+  "losses": 2,
+  "errors": 0,
+  "score": 0.9,
+  "winrate_ci95": [
+    0.699,
+    0.9721
+  ],
+  "elo_gap_est": 381.7,
+  "avg_steps": 77.8,
+  "timestamp": "2026-06-20T21:18:53"
+}
